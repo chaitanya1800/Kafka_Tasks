@@ -1,0 +1,89 @@
+          TASK     4 
+
+Production Incident Response & Kafka Troubleshooting
+
+Incident Incident Report: Broker Crash & Partition Outage
+
+Outage Summary
+
+Incident Type: Single Node Outage leading to Under-Replicated Partitions (URPs).
+
+Target Infrastructure Node: Broker ID 2 (172.31.84.40:9093).
+
+Impact: Topic Topic-A Partition 0 lost its designated partition leader. Consumers reading explicitly from Partition 0 reported processing halts, creating visible consumer lag spike blocks.
+
+
+
+Root Cause Analysis (RCA)
+
+[2026-05-31 10:14:22,482] ERROR [KafkaServer id=2] Fatal error during KafkaServer startup. Prepare to shutdown (kafka.server.KafkaServer)
+java.io.IOException: No space left on device
+    at java.io.FileDescriptor.writeBytes(Native Method)
+    at java.io.FileOutputStream.write(FileOutputStream.java:326)
+    at kafka.log.LogSegment.append(LogSegment.scala:124)
+[2026-05-31 10:14:22,510] INFO [KafkaServer id=2] Shutting down execution processes...
+
+
+
+Emergency Infrastructure Recovery Plan
+
+
+Remediate Disk & Clear Volatile Memory
+
+
+# Verify volume space usage across mount points
+df -h
+
+# Manually purge older expired logs to reclaim instant space
+sudo rm -rf /tmp/kafka-logs-2/replicated-test-2/*.log
+
+
+Manual Corrupt Log Segment Cleanup
+
+# Force remove corrupted message boundary index allocations
+rm -f /tmp/kafka-logs-2/*/*.index
+rm -f /tmp/kafka-logs-2/*/*.timeindex
+
+
+Safely Restart the Broker Node
+
+# Launch Broker 2 cleanly back to the running cluster daemon array
+bin/kafka-server-start.sh -daemon config/server-2.properties
+
+
+Cluster Re-balancing & Partition Reassignment
+
+Create a Reassignment Blueprint File (reassign.json)
+
+{
+  "version": 1,
+  "partitions": [
+    {
+      "topic": "Topic-A",
+      "partition": 0,
+      "replicas": [1, 2, 3]
+    }
+  ]
+}
+
+Run the Cluster Re-balance Routine
+
+bin/kafka-reassign-partitions.sh --bootstrap-server 172.31.84.40:9092 --reassignment-json-file reassign.json --execute
+
+Verification and Incident Closure
+
+bin/kafka-topics.sh --describe --bootstrap-server 172.31.84.40:9092 --topic Topic-A
+
+Expected Diagnostic Printout:
+
+Topic: Topic-A   Partition: 0   Leader: 2   Replicas: 1,2,3   Isr: 1,2,3
+
+
+Live Validation Output
+
+
+[ec2-user@ip-172-31-84-40 kafka_2.13-3.4.0]$ python3 consumer.py Topic-A
+Tracking pipeline listening actively on: [Topic-A]
+Consumed event from partition 0: {'message_id': 1001, 'status': 'RECOVERED_DATA'}
+Consumed event from partition 0: {'message_id': 1002, 'status': 'RECOVERED_DATA'}
+
