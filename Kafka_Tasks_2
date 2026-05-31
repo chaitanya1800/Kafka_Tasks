@@ -1,0 +1,92 @@
+                  TASK      2 
+
+         Package Installation
+
+# Update package configurations and install pip dependencies
+sudo dnf install -y libxcrypt-compat python3-pip
+
+# Install the official Python client for Apache Kafka
+pip3 install kafka-python
+
+        Dependency Verification
+
+python3 -c "import kafka; print(kafka.__version__)"
+
+Expected Terminal Output Trace:
+
+2.3.1
+
+       Production Script (producer.py)
+
+import time
+import json
+from kafka import KafkaProducer
+
+# 1. Define cluster endpoints to maintain connection resilience
+BOOTSTRAP_SERVERS = [
+    '172.31.84.40:9092',
+    '172.31.84.40:9093',
+    '172.31.84.40:9094'
+]
+
+def create_producer():
+    """Initializes the Kafka Producer with JSON serialization."""
+    return KafkaProducer(
+        bootstrap_servers=BOOTSTRAP_SERVERS,
+        value_serializer=lambda v: json.dumps(v).encode('utf-8'),
+        acks='all',                 # Ensure all brokers acknowledge write operations
+        retries=5                   # High availability error retry strategy
+    )
+
+def stream_workload(producer, topic_name, total_messages=1000, batch_interval=200):
+    """Simulates high-throughput streaming workloads in modular chunks."""
+    print(f"Starting production for {topic_name}...")
+    
+    for i in range(1, total_messages + 1):
+        payload = {
+            "event_id": i,
+            "timestamp": time.time(),
+            "status": "OPERATIONAL",
+            "metric_value": i * 1.5
+        }
+        
+        # Fire-and-forget payload dispatch down the cluster
+        producer.send(topic_name, value=payload)
+        
+        # Output visual logs at designated metric checkpoints
+        if i % batch_interval == 0:
+            print(f"Sent {i} messages to {topic_name}")
+            
+    # Block and flush memory blocks out to network interfaces
+    producer.flush()
+
+if __name__ == "__main__":
+    kafka_producer = create_producer()
+    
+    # Sequence continuous streams into disparate pipelines
+    stream_workload(kafka_producer, topic_name='Topic-A')
+    stream_workload(kafka_producer, topic_name='Topic-B')
+    
+    print("All messages sent successfully.")
+    kafka_producer.close()
+
+           Validation & Execution Proof
+
+       python3 producer.py
+
+
+Starting production for Topic-A...
+Sent 200 messages to Topic-A
+Sent 400 messages to Topic-A
+Sent 600 messages to Topic-A
+Sent 800 messages to Topic-A
+Sent 1000 messages to Topic-A
+Starting production for Topic-B...
+Sent 200 messages to Topic-B
+Sent 400 messages to Topic-B
+Sent 600 messages to Topic-B
+Sent 800 messages to Topic-B
+Sent 1000 messages to Topic-B
+All messages sent successfully.
+
+
